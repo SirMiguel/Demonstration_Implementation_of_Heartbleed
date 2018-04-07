@@ -30,6 +30,8 @@ void receive_heartbeat_request_and_respond(int socket, char* current_host);
 void send_and_receive_malicious_heartbeat_request(int sock, char *payload, int payload_length, char *host, char *victim);
 
 
+int run_server_program();
+
 int recv_all(int sockfd, void *buf, size_t len, int flags)
 {
     size_t toread = len;
@@ -124,19 +126,40 @@ int main()
             printf("\nConnection Failed \n");
             return -1;
         }
-       // char* start_buffer[1];
-       // if (recv(sock, start_buffer, sizeof(start_buffer), 0)) {
-            if (heartbleed_option == 1) {
-                    cout << "Heartbeat Demonstration" << endl;
-                    send_malicious_heartbeat(sock, "catdog", 100, "Client");
-            } else if (heartbleed_option == 2) {
-                    receive_heartbeat_request_and_respond(sock, "Client");
-            }
 
-     //   shutdown(sock, 2);
-       // close(sock);
+
+
+
+        Heartbeat sneaky_heartbeat_request_send("cat", 1000);
+
+        // Just info for user
+        cout <<  ": Sending a malicious heartbeat request" << endl;
+        cout << "Payload: " << sneaky_heartbeat_request_send.payload << endl;
+        cout << "Payload length: " << sneaky_heartbeat_request_send.payload_length << endl;
+        cout << "\n" << endl;
+
+        // Send malicious Heartbeat Request
+        stringstream string_stream;
+        string_stream << sneaky_heartbeat_request_send;    //serialize
+        send(sock, string_stream.str().c_str(), sizeof(string_stream.str()), 0);
+
+        cout << "sent" << endl;
+
+        Heartbeat heartbeat_response_receive = receive_heartbeat(sock);
+        cout << ": Received Heartbeat Response" << endl;
+
+        cout << "Response Payload (containing original payload, plus adjacent memory on " << "):" << endl;
+        for (uint16_t i = 0; i < heartbeat_response_receive.payload_length; i++)
+            cout << (heartbeat_response_receive.payload[i]);
+        cout << endl;
+
+
+
+       // return 0;
 
     } else { // parent process
+
+
         int server_fd, new_socket, valread;
         struct sockaddr_in address;
         int opt = 1;
@@ -147,13 +170,14 @@ int main()
             perror("socket failed");
             exit(EXIT_FAILURE);
         }
+
         int tr=1;
+
         // kill "Address already in use" error message
-        if (setsockopt(server_fd,SOL_SOCKET,SO_REUSEADDR,&tr,sizeof(int)) == -1) {
+        if (setsockopt(server_fd, SOL_SOCKET,SO_REUSEADDR,&tr,sizeof(int)) == -1) {
             perror("setsockopt");
             exit(1);
         }
-
 
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
@@ -165,31 +189,53 @@ int main()
             exit(EXIT_FAILURE);
         }
 
-        if (listen(server_fd, 3) < 0) {
-            perror("listen");
-            exit(EXIT_FAILURE);
+
+
+        while (1) {
+            if (listen(server_fd, 3) < 0) {
+                perror("listen");
+                exit(EXIT_FAILURE);
+            }
+
+
+            new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+            if ((new_socket < 0)) {
+                perror("accept");
+                exit(EXIT_FAILURE);
+            } else {
+
+                int server_pid = fork();
+                if (server_pid < 0)
+                    perror("ERROR on fork");
+                if (server_pid == 0)  {
+                    close(server_fd);
+
+                    cout << "Connection accepted" << endl;
+                    receive_heartbeat_request_and_respond(new_socket, "Server");
+                    // char* c = "afdskldfjasldkfjasdfklsadjflksdjfas;ldkfjasl;dkfjasdlfkajsdflkadjsfl;askdfjsal;dfkjasdl;fkjasdlfk;ajsdf;lkasjdfal;skdfjasl;dfkqwepojvsdflkfdhgjkshjahfkldsfsdnbfmabsdfm,nabsdfnmasbdfesd;lfkjasd;lfkjasdf;lkajsdf;lkasjdf;lasdkjfa;lsdkfjas;ldkfjas;dlfkjasd;lfkjasdl;fkajsdfl;kasdjfakls;dfjasl;dkfjasd;lkfjasdfkjl";
+/*
+                    Heartbeat heartbeat_request_received = receive_heartbeat(new_socket);
+                    cout << ": Heartbeat Request Received" << endl;
+                    Heartbeat heartbeat_response_send = Heartbeat(&heartbeat_request_received);
+                    stringstream ss;
+                    ss << heartbeat_response_send;    //serialize
+                    cout << "here" << endl;
+                    send(new_socket, ss.str().c_str(), sizeof(ss.str()), 0);
+                    cout <<": Heartbeat Response Sent\n" << endl;
+*/
+
+                    shutdown(new_socket, 0);
+                    close(new_socket);
+                    exit(0);
+                }
+            }
+
         }
 
-        if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0) {
-            perror("accept");
-            exit(EXIT_FAILURE);
-        }
-
-
-
-        if (heartbleed_option == 1) {
-                receive_heartbeat_request_and_respond(new_socket, "Server");
-        } else if (heartbleed_option == 2) {
-                send_malicious_heartbeat(new_socket, "catdog", 100, "server");
-                receive_heartbeat_response(new_socket, "Server", "client");
-        }
-      //  shutdown(new_socket, 2);
-       // close(new_socket);
-
-        //printf("Hello message sent\n");
     }
-   // return  0;
 }
+
+
 
 
 void send_and_receive_malicious_heartbeat_request(int sock, char *payload, int payload_length, char *host, char *victim) {
@@ -242,10 +288,11 @@ Heartbeat receive_heartbeat(int new_socket) {
     stringstream string_stream;
     char buffer[sizeof(Heartbeat)];
     string temp;
-    recv(new_socket, &buffer, sizeof(buffer), MSG_WAITALL);  //receive
+    recv(new_socket, &buffer, sizeof(buffer), 0);  //receive
     temp.assign(buffer);
     string_stream << temp;
     string_stream >> heartbeat;   //unserialize
+    cout << "asdf" << endl;
     return heartbeat;
 }
 
