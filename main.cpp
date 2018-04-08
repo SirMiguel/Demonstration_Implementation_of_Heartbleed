@@ -10,8 +10,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <iostream>
-#include <sstream>
-#include "heartbeat.h"
 
 // Server side C/C++ program to demonstrate Socket programming
 
@@ -25,14 +23,15 @@ unsigned char * create_sneaky_heartbeat_request(unsigned int payload_length){
     *p++ =  0;
     *p++ = payload_length;
     *p++ = payload_length >> 8;
-    //*p++ = 'c';
-    //*p++ = 'a';
-    //*p++ = 't';
-    //or (int i = 0; i < payload_length; i++){
-    //   *p++ = rand();//(unsigned char) rand();
-    //}
     return buffer;
 }
+
+//*p++ = 'c';
+//*p++ = 'a';
+//*p++ = 't';
+//or (int i = 0; i < payload_length; i++){
+//   *p++ = rand();//(unsigned char) rand();
+//}
 
 void read_heartbeat_response(int socket) {
     unsigned char *type_buf = new unsigned char();
@@ -55,25 +54,23 @@ void read_heartbeat_response(int socket) {
 
         cout << "Payload from victim:";
         for (int i = 0; i < payload_length; i++) {
-            if (i % 100 == 0) {
+            if (i % 50 == 0) {
                 cout << endl;
             }
-            cout << payload_buffer[i]; //(unsigned int)
+            cout << (int) payload_buffer[i] << " "; //(unsigned int)
         }
         cout << endl;
-
     }
 }
 
 void read_and_respond_to_heartbeat_request(int socket) {
-
     unsigned char* type_buf = new unsigned char();
     read(socket, type_buf, 1);
     unsigned short type = (unsigned short) *type_buf;
    // cout << "Type received: " << type << endl;
 
     if (type == 0){
-        cout << "\nReceived Heartbeat Request" << endl;
+        //cout << "\nReceived Heartbeat Request" << endl;
         unsigned char *payload_length_buf = new unsigned char[2];
 
         read(socket, payload_length_buf, 2);
@@ -112,9 +109,11 @@ void read_and_respond_to_heartbeat_request(int socket) {
 void send_sneaky_heartbeat_request(int socket, int payload_length) {
     // MAX PAYLOAD LENGTH: 255
     unsigned char * heartbeat_request_to_send = create_sneaky_heartbeat_request(payload_length);
-    cout << "\nSending Heatbeat buffer" << endl;
-    for (int i = 0; i < sizeof(heartbeat_request_to_send); i++)
-        cout << (int) heartbeat_request_to_send[i];
+    cout << "\nSending Heatbeat Request: ";
+    for (int i = 0; i < sizeof(heartbeat_request_to_send); i++) {
+        cout << static_cast<int>(heartbeat_request_to_send[i]);
+            cout << " ";
+    }
     cout << endl;
 
     ssize_t sent = write(socket, heartbeat_request_to_send, sizeof(heartbeat_request_to_send));
@@ -134,22 +133,17 @@ int heartbleed_option;
 
 int main() {
 
-    const char *secret_username = "secret_username that no one should ever see :O";
-    const char *secret_password = "secret password that is not to be shared!";
-    const char *secret_key = "super secret key held in memory";
-    const char *mess = "asdfjasdfkljasdfkljasdl;fkasjdf;skfaklsdfjasdl;kfjasdlfkjasdfl;kajsdflaksdjfalsdkjfdlkjadl;skfjasdl;fkdjasfladsjfldksaj;lsdkfjdals;kjfasl;kjsdf;dkfjasd;lfkjqweopirajsd;klfasldkfjs;alksfjsdl;kfjasdlkfjasdl;kfjasdlk;fjasd;lf";
-
 
     // Heartbleed options:
     // 1 : Heartbleed
     // 2 : Reverse Heartbleed
     bool valid_option = false;
     while (!valid_option) {
-        cout << "---Heartbleed and Reverse Heartbleed Simulation---\n\n" << endl;
+        cout << "---Heartbleed and Reverse Heartbleed Simulation---\n" << endl;
         cout << "Please select an option:" << endl;
         cout << "1: Heartbleed (collect data from server)" << endl;
         cout << "2: Reverse Heartbleed (collect data from client" << endl;
-
+        cout << "\nNote: to quit while running either Heartbleed or Reverse Hearbleed, please press 'q'\n" << endl;
         cout << "Option: ";
         cin >> heartbleed_option;
         if (heartbleed_option == 1 || heartbleed_option == 2) {
@@ -159,8 +153,12 @@ int main() {
         }
     }
 
-    cout << "\n\n\n\n" << endl;
 
+    int bytes_to_steal = 0;
+    cout << "Please enter the number of bytes to steal from victim (max is 65535):";
+    cin >> bytes_to_steal;
+
+    cout << "\n\n" << endl;
 
     int pid;
 
@@ -170,78 +168,53 @@ int main() {
         fprintf(stderr, "Fork failed!\n");
         exit(-1);
     } else if (pid == 0) { // child process
+        // CLIENT SET UP
+        struct sockaddr_in address;
+        int sock = 0, valread;
+        struct sockaddr_in serv_addr;
+        if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+            printf("\n Socket creation error \n");
+            exit(-1);
+        }
+
+        int tr = 1;
+
+        // kill "Address already in use" error message
+        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &tr, sizeof(int)) == -1) {
+            perror("setsockopt");
+            exit(1);
+        }
+
+        memset(&serv_addr, '0', sizeof(serv_addr));
+
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(PORT);
 
 
+        // Convert IPv4 and IPv6 addresses from text to binary form
+        if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+            printf("\nInvalid address/ Address not supported \n");
+            exit(-1);
+        }
+
+        if (connect(sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+            printf("\nConnection Failed \n");
+            exit(-1);
+        }
+
+
+        // HEARTBEAT CODE
         if (heartbleed_option == 1) {
             while (cin.get() != 'q') {
-                struct sockaddr_in address;
-                int sock = 0, valread;
-                struct sockaddr_in serv_addr;
-                if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-                    printf("\n Socket creation error \n");
-                    exit(-1);
-                }
+                cout << "\n\n\nInstance of Heartbeat" << endl;
 
-                int tr = 1;
-
-                // kill "Address already in use" error message
-                if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &tr, sizeof(int)) == -1) {
-                    perror("setsockopt");
-                    exit(1);
-                }
-
-                memset(&serv_addr, '0', sizeof(serv_addr));
-
-                serv_addr.sin_family = AF_INET;
-                serv_addr.sin_port = htons(PORT);
-
-
-                // Convert IPv4 and IPv6 addresses from text to binary form
-                if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-                    printf("\nInvalid address/ Address not supported \n");
-                    exit(-1);
-                }
-
-                if (connect(sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-                    printf("\nConnection Failed \n");
-                    exit(-1);
-                }
-                send_sneaky_heartbeat_request(sock, 40);
+                send_sneaky_heartbeat_request(sock, bytes_to_steal);
                 read_heartbeat_response(sock);
-                close(sock);
+                cout << "To continue reading bytes please press any key and press enter, otherwise enter 'q' to quit" << endl;
             }
+            close(sock);
+
         } else if (heartbleed_option == 2) {
-                struct sockaddr_in address;
-                int sock = 0, valread;
-                struct sockaddr_in serv_addr;
-                if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-                    printf("\n Socket creation error \n");
-                    exit(-1);
-                }
-
-                int tr = 1;
-
-                // kill "Address already in use" error message
-                if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &tr, sizeof(int)) == -1) {
-                    perror("setsockopt");
-                    exit(1);
-                }
-
-                memset(&serv_addr, '0', sizeof(serv_addr));
-
-                serv_addr.sin_family = AF_INET;
-                serv_addr.sin_port = htons(PORT);
-
-                // Convert IPv4 and IPv6 addresses from text to binary form
-                if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-                    printf("\nInvalid address/ Address not supported \n");
-                    exit(-1);
-                }
-
-                if (connect(sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-                    printf("\nConnection Failed \n");
-                    exit(-1);
-                }
             while (1) {
                 read_and_respond_to_heartbeat_request(sock);
             }
@@ -250,8 +223,7 @@ int main() {
         return 0;
 
     } else { // parent process
-
-
+        // SERVER SET UP
         int server_fd, new_socket, valread;
         struct sockaddr_in address;
         int opt = 1;
@@ -286,25 +258,23 @@ int main() {
             exit(EXIT_FAILURE);
         }
 
-
+        // HEARTBEAT CODE
         if (heartbleed_option == 1) {
-            while (cin.get() != 'q') {
                 new_socket = accept(server_fd, (struct sockaddr *) &address, (socklen_t *) &addrlen);
                 if (new_socket < 0) {
                     perror("accept");
                     exit(EXIT_FAILURE);
                 } else {
-                    int server_pid = fork();
-                    if (server_pid < 0) {
-                        fprintf(stderr, "Fork failed!\n");
-                        exit(-1);
-                    }
-                    if (server_pid == 0) {
+                    while (1) {
+
+                        /*  int server_pid = fork();
+                          if (server_pid < 0) {
+                              fprintf(stderr, "Fork failed!\n");
+                              exit(-1);
+                          }
+                          if (server_pid == 0) {*/
                         close(server_fd);
                         read_and_respond_to_heartbeat_request(new_socket);
-                        //shutdown(new_socket, 0);
-                        exit(0);
-                    }
                 }
             }
         } else if (heartbleed_option == 2) {
@@ -314,11 +284,10 @@ int main() {
                 exit(EXIT_FAILURE);
             } else {
                 while (cin.get() != 'q') {
-
-                    cout << "Instance of Reverse Heartbeat" << endl;
-                    send_sneaky_heartbeat_request(new_socket, 40);
+                    cout << "\n\n\nInstance of Reverse Heartbeat" << endl;
+                    send_sneaky_heartbeat_request(new_socket, bytes_to_steal);
                     read_heartbeat_response(new_socket);
-                    //exit(0);
+                    cout << "To continue reading bytes please press any key and press enter, otherwise enter 'q' to quit" << endl;
                 }
                 exit(0);
             }
